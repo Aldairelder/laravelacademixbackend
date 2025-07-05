@@ -1,0 +1,37 @@
+// resources/views/admin/dashboard.blade.php
+
+@extends('layouts.admin')
+
+@section('content')
+<div class="container">
+    <h1>Dashboard Admin</h1>
+    <!-- Contenido específico para el administrador -->
+</div>
+@endsection
+```
+
+```php
+// resources/views/profesor/dashboard.blade.php
+
+@extends('layouts.profesor')
+
+@section('content')
+<div class="container">
+    <h1>Dashboard Profesor</h1>
+    <!-- Contenido específico para el profesor -->
+</div>
+@endsection
+```
+
+```php
+// resources/views/estudiante/dashboard.blade.php
+
+@extends('layouts.estudiante')
+
+@section('content')
+<div class="container">
+    <h1>Dashboard Estudiante</h1>
+    <!-- Contenido específico para el estudiante -->
+</div>
+@endsection
+```
