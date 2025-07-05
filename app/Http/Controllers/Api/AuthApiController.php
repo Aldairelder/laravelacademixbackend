@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use App\Models\User; // Asegúrate que este modelo apunte a la tabla 'usuarios'
 
 class AuthApiController extends Controller
 {
@@ -18,7 +19,7 @@ class AuthApiController extends Controller
                 'password' => 'required|string',
             ]);
 
-            // Buscar usuario en la tabla usuarios
+            // Buscar usuario
             $usuario = DB::table('usuarios')
                 ->leftJoin('roles', 'usuarios.rol_id', '=', 'roles.id')
                 ->select('usuarios.*', 'roles.nombre as rol_nombre')
@@ -26,18 +27,22 @@ class AuthApiController extends Controller
                 ->orWhere('usuarios.email', $request->usuario)
                 ->first();
 
-            \Log::info('Usuario encontrado:', (array)$usuario);
+            \Log::info('Usuario encontrado:', (array) $usuario);
             \Log::info('Request password:', [$request->password]);
 
-            if (!$usuario || !password_verify($request->password, $usuario->password)) {
-                \Log::error('Credenciales incorrectas o usuario no encontrado');
+            if (!$usuario || !Hash::check($request->password, $usuario->password)) {
+                \Log::error('Credenciales incorrectas');
                 throw ValidationException::withMessages([
                     'usuario' => ['Las credenciales proporcionadas son incorrectas.'],
                 ]);
             }
 
-            // Obtener el modelo User para Sanctum (ya apunta a 'usuarios')
-            $userModel = \App\Models\User::find($usuario->id);
+            // Obtener instancia del modelo User (asegúrate que App\Models\User use la tabla 'usuarios')
+            $userModel = User::find($usuario->id);
+
+            if (!$userModel) {
+                return response()->json(['error' => 'Usuario no válido en el modelo'], 500);
+            }
 
             // Crear token
             $token = $userModel->createToken('api-token')->plainTextToken;
@@ -55,11 +60,13 @@ class AuthApiController extends Controller
                 ],
                 'token' => $token,
             ]);
+
         } catch (\Exception $e) {
+            \Log::error('Error en login: ' . $e->getMessage());
             return response()->json([
                 'error' => 'Error interno',
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(), // Solo para depuración, elimina en producción
+                // 'trace' => $e->getTraceAsString(), // ⚠️ Solo para depuración, no en producción
             ], 500);
         }
     }
@@ -73,5 +80,3 @@ class AuthApiController extends Controller
         ]);
     }
 }
-     
-
