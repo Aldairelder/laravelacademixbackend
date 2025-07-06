@@ -23,6 +23,7 @@ return [
     'http://127.0.0.1:3000',
     'http://localhost:8080',       // <<< AÑADE ESTO
     'http://192.168.215.25:8080',
+    'http://192.168.101.8:8080',
 ],
 
     'allowed_origins_patterns' => [],

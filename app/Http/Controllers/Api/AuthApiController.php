@@ -6,20 +6,23 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
-use App\Models\User; // Asegúrate que este modelo apunte a la tabla 'usuarios'
+use App\Models\User;
 
 class AuthApiController extends Controller
 {
     public function login(Request $request)
     {
         try {
+            // Validar campos requeridos
             $request->validate([
                 'usuario' => 'required|string',
                 'password' => 'required|string',
             ]);
 
-            // Buscar usuario
+            // Asegurar que password sea string (por si llega como array)
+            $password = is_array($request->password) ? $request->password[0] : $request->password;
+
+            // Buscar usuario por usuario o email
             $usuario = DB::table('usuarios')
                 ->leftJoin('roles', 'usuarios.rol_id', '=', 'roles.id')
                 ->select('usuarios.*', 'roles.nombre as rol_nombre')
@@ -28,25 +31,25 @@ class AuthApiController extends Controller
                 ->first();
 
             \Log::info('Usuario encontrado:', (array) $usuario);
-            \Log::info('Request password:', [$request->password]);
+            \Log::info('Password recibido:', [$password]);
 
-            if (!$usuario || !Hash::check($request->password, $usuario->password)) {
+            // Validar credenciales
+            if (!$usuario || !Hash::check($password, $usuario->password)) {
                 \Log::error('Credenciales incorrectas');
-                throw ValidationException::withMessages([
-                    'usuario' => ['Las credenciales proporcionadas son incorrectas.'],
-                ]);
+                return response()->json(['error' => 'Credenciales incorrectas'], 401);
             }
 
-            // Obtener instancia del modelo User (asegúrate que App\Models\User use la tabla 'usuarios')
+            // Instanciar modelo User (asegúrate que apunte a tabla 'usuarios')
             $userModel = User::find($usuario->id);
-
             if (!$userModel) {
+                \Log::error('No se encontró el modelo User para ID: ' . $usuario->id);
                 return response()->json(['error' => 'Usuario no válido en el modelo'], 500);
             }
 
-            // Crear token
+            // Crear token con Sanctum
             $token = $userModel->createToken('api-token')->plainTextToken;
 
+            // Retornar respuesta exitosa
             return response()->json([
                 'user' => [
                     'id' => $usuario->id,
@@ -60,23 +63,28 @@ class AuthApiController extends Controller
                 ],
                 'token' => $token,
             ]);
-
         } catch (\Exception $e) {
             \Log::error('Error en login: ' . $e->getMessage());
             return response()->json([
                 'error' => 'Error interno',
                 'message' => $e->getMessage(),
-                // 'trace' => $e->getTraceAsString(), // ⚠️ Solo para depuración, no en producción
             ], 500);
         }
     }
 
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
-
-        return response()->json([
-            'message' => 'Sesión cerrada correctamente'
-        ]);
+        try {
+            $request->user()->currentAccessToken()->delete();
+            return response()->json([
+                'message' => 'Sesión cerrada correctamente'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error en logout: ' . $e->getMessage());
+            return response()->json([
+                'error' => 'Error al cerrar sesión',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
     }
 }
