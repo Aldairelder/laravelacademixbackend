@@ -5,30 +5,32 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 class AdminApiController extends Controller
 {
     // Usuarios
+   // 📥 Obtener todos los usuarios
     public function usuariosIndex(Request $request)
-{
-    $query = DB::table('usuarios')
-        ->leftJoin('roles', 'usuarios.rol_id', '=', 'roles.id')
-        ->select('usuarios.*', 'roles.nombre as rol_nombre');
+    {
+        $query = DB::table('usuarios')
+            ->leftJoin('roles', 'usuarios.rol_id', '=', 'roles.id')
+            ->select('usuarios.*', 'roles.nombre as rol_nombre');
 
-    // Filtro por nombre de rol, si viene en el query string
-    if ($request->has('rol')) {
-        $query->where('roles.nombre', $request->rol);
+        if ($request->has('rol')) {
+            $query->where('roles.nombre', $request->rol);
+        }
+
+        $usuarios = $query->get()->map(function ($u) {
+            $u->rol = (object)['nombre' => $u->rol_nombre];
+            unset($u->rol_nombre);
+            return $u;
+        });
+
+        return response()->json($usuarios);
     }
 
-    $usuarios = $query->get()->map(function ($u) {
-        $u->rol = (object)['nombre' => $u->rol_nombre];
-        return $u;
-    });
-
-    return response()->json($usuarios);
-}
-
-
+    // ➕ Crear usuario
     public function storeUsuario(Request $request)
     {
         $validated = $request->validate([
@@ -41,19 +43,20 @@ class AdminApiController extends Controller
             'genero' => 'required|string|max:10',
         ]);
 
-        $id = DB::table('usuarios')->insertGetId([
-            'nombre' => $validated['nombre'],
-            'apellido' => $validated['apellido'],
-            'usuario' => $validated['usuario'],
-            'email' => $validated['email'],
-            'password' => password_hash($validated['password'], PASSWORD_DEFAULT),
+        $usuario = User::create([
+            'nombre' => trim($validated['nombre']),
+            'apellido' => trim($validated['apellido']),
+            'usuario' => trim($validated['usuario']),
+            'email' => trim($validated['email']),
+            'password' => Hash::make($validated['password']),
             'rol_id' => $validated['rol_id'],
-            'genero' => $validated['genero'],
+            'genero' => trim($validated['genero']),
         ]);
 
-        return response()->json(['message' => 'Usuario creado correctamente', 'usuario_id' => $id], 201);
+        return response()->json(['message' => 'Usuario creado correctamente', 'usuario_id' => $usuario->id], 201);
     }
 
+    // 🔍 Mostrar usuario específico
     public function showUsuario($id)
     {
         $u = DB::table('usuarios')
@@ -65,45 +68,65 @@ class AdminApiController extends Controller
         if (!$u) return response()->json(['error' => 'Usuario no encontrado'], 404);
 
         $u->rol = (object)['nombre' => $u->rol_nombre];
+        unset($u->rol_nombre);
         return response()->json($u);
     }
 
+    // ✏️ Actualizar usuario
+    
     public function updateUsuario(Request $request, $id)
     {
+        $usuario = \App\Models\User::findOrFail($id);
+
+        // Save original username and email for comparison
+        $originalUsername = $usuario->usuario;
+        $originalEmail = $usuario->email;
+
         $validated = $request->validate([
-            'nombre' => 'required|string',
-            'apellido' => 'required|string',
-            'usuario' => 'required|string|unique:usuarios,usuario,'.$id,
-            'email' => 'required|email|unique:usuarios,email,'.$id,
+            'nombre' => 'required|string|max:100',
+            'apellido' => 'required|string|max:100',
+            'usuario' => 'required|string|max:100|unique:usuarios,usuario,' . $id,
+            'email' => 'required|email|max:100|unique:usuarios,email,' . $id,
             'rol_id' => 'required|integer|exists:roles,id',
-            'genero' => 'required|string',
-            'password' => 'nullable|string|min:6',
+            'genero' => 'required|string|max:10',
+            'password' => 'nullable|string|min:6', // Password is nullable, but still validated if present
         ]);
 
-        $updateData = [
-            'nombre' => $validated['nombre'],
-            'apellido' => $validated['apellido'],
-            'usuario' => $validated['usuario'],
-            'email' => $validated['email'],
-            'rol_id' => $validated['rol_id'],
-            'genero' => $validated['genero'],
-        ];
+        $usuario->nombre = trim($validated['nombre']);
+        $usuario->apellido = trim($validated['apellido']);
+        $usuario->usuario = trim($validated['usuario']);
+        $usuario->email = trim($validated['email']);
+        $usuario->rol_id = $validated['rol_id'];
+        $usuario->genero = trim($validated['genero']);
 
-        if (!empty($validated['password'])) {
-            $updateData['password'] = password_hash($validated['password'], PASSWORD_DEFAULT);
+        // Check if username or email has changed
+        $credentialsChanged = ($originalUsername !== $usuario->usuario || $originalEmail !== $usuario->email);
+
+        // Only update password if a new one is provided AND it's not an empty string
+        if (!empty($validated['password'])) { // This checks for null and empty string
+            $usuario->password = Hash::make($validated['password']);
+            $usuario->tokens()->delete(); // Invalidate tokens if password changes
+        } elseif ($credentialsChanged) {
+            // If username or email changed, invalidate tokens (even if password wasn't changed)
+            // This is a good security practice for credential changes.
+            $usuario->tokens()->delete();
         }
 
-        $updated = DB::table('usuarios')->where('id', $id)->update($updateData);
-        if (!$updated) return response()->json(['error' => 'Usuario no encontrado o sin cambios'], 404);
+        $usuario->save();
 
         return response()->json(['message' => 'Usuario actualizado correctamente']);
     }
 
+    // 🗑️ Eliminar usuario
     public function destroyUsuario($id)
     {
         try {
             $deleted = DB::table('usuarios')->where('id', $id)->delete();
-            if (!$deleted) return response()->json(['error' => 'Usuario no encontrado'], 404);
+
+            if (!$deleted) {
+                return response()->json(['error' => 'Usuario no encontrado'], 404);
+            }
+
             return response()->json(['message' => 'Usuario eliminado correctamente']);
         } catch (\Illuminate\Database\QueryException $e) {
             if ($e->getCode() == 23000) {

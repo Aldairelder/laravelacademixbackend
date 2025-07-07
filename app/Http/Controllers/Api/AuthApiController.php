@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 
@@ -19,47 +18,33 @@ class AuthApiController extends Controller
                 'password' => 'required|string',
             ]);
 
-            // Asegurar que password sea string (por si llega como array)
             $password = is_array($request->password) ? $request->password[0] : $request->password;
 
-            // Buscar usuario por usuario o email
-            $usuario = DB::table('usuarios')
-                ->leftJoin('roles', 'usuarios.rol_id', '=', 'roles.id')
-                ->select('usuarios.*', 'roles.nombre as rol_nombre')
-                ->where('usuarios.usuario', $request->usuario)
-                ->orWhere('usuarios.email', $request->usuario)
-                ->first();
-
-            \Log::info('Usuario encontrado:', (array) $usuario);
-            \Log::info('Password recibido:', [$password]);
+            // ✅ Buscar usuario con Eloquent
+            $user = User::where('usuario', $request->usuario)
+                        ->orWhere('email', $request->usuario)
+                        ->with('rol') // si tienes una relación rol() definida en el modelo
+                        ->first();
 
             // Validar credenciales
-            if (!$usuario || !Hash::check($password, $usuario->password)) {
-                \Log::error('Credenciales incorrectas');
+            if (!$user || !Hash::check($password, $user->password)) {
                 return response()->json(['error' => 'Credenciales incorrectas'], 401);
             }
 
-            // Instanciar modelo User (asegúrate que apunte a tabla 'usuarios')
-            $userModel = User::find($usuario->id);
-            if (!$userModel) {
-                \Log::error('No se encontró el modelo User para ID: ' . $usuario->id);
-                return response()->json(['error' => 'Usuario no válido en el modelo'], 500);
-            }
-
             // Crear token con Sanctum
-            $token = $userModel->createToken('api-token')->plainTextToken;
+            $token = $user->createToken('api-token')->plainTextToken;
 
             // Retornar respuesta exitosa
             return response()->json([
                 'user' => [
-                    'id' => $usuario->id,
-                    'nombre' => $usuario->nombre,
-                    'apellido' => $usuario->apellido,
-                    'usuario' => $usuario->usuario,
-                    'email' => $usuario->email,
-                    'genero' => $usuario->genero,
-                    'rol_id' => $usuario->rol_id,
-                    'rol' => $usuario->rol_nombre,
+                    'id' => $user->id,
+                    'nombre' => $user->nombre,
+                    'apellido' => $user->apellido,
+                    'usuario' => $user->usuario,
+                    'email' => $user->email,
+                    'genero' => $user->genero,
+                    'rol_id' => $user->rol_id,
+                    'rol' => $user->rol->nombre ?? null,
                 ],
                 'token' => $token,
             ]);

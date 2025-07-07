@@ -3,7 +3,8 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 class AdminController extends Controller
 {
     public function usuariosIndex()
@@ -351,55 +352,61 @@ class AdminController extends Controller
         return redirect()->route('admin.asignaciones.index')->with('success', 'Asignación eliminada correctamente.');
     }
     
-    public function updateUsuario(Request $request, $id)
-    {
-        $validated = $request->validate([
-            'nombre' => 'required|string',
-            'apellido' => 'required|string',
-            'usuario' => 'required|string',
-            'email' => 'required|email',
-            'rol_id' => 'required|integer',
-            'genero' => 'required|string',
-            'password' => 'nullable|string|min:6',
-        ]);
-        $updateData = [
-            'nombre' => $validated['nombre'],
-            'apellido' => $validated['apellido'],
-            'usuario' => $validated['usuario'],
-            'email' => $validated['email'],
-            'rol_id' => $validated['rol_id'],
-            'genero' => $validated['genero'],
-        ];
-        if (!empty($validated['password'])) {
-            $updateData['password'] = password_hash($validated['password'], PASSWORD_DEFAULT);
-        }
-        
-        \DB::table('usuarios')->where('id', $id)->update($updateData);
-        return redirect()->route('admin.usuarios.index')->with('success', 'Usuario actualizado correctamente.');
-    }
-    
-    public function storeUsuario(Request $request)
-    {
-        $validated = $request->validate([
-            'nombre' => 'required|string|max:100',
-            'apellido' => 'required|string|max:100',
-            'usuario' => 'required|string|max:100|unique:usuarios,usuario',
-            'email' => 'required|email|max:100|unique:usuarios,email',
-            'password' => 'required|string|min:6',
-            'rol_id' => 'required|integer|exists:roles,id',
-            'genero' => 'required|string|max:10',
-        ]);
+   public function storeUsuario(Request $request)
+{
+    $validated = $request->validate([
+        'nombre' => 'required|string|max:100',
+        'apellido' => 'required|string|max:100',
+        'usuario' => 'required|string|max:100|unique:usuarios,usuario',
+        'email' => 'required|email|max:100|unique:usuarios,email',
+        'password' => 'required|string|min:6',
+        'rol_id' => 'required|integer|exists:roles,id',
+        'genero' => 'required|string|max:10',
+    ]);
 
-        \DB::table('usuarios')->insert([
-            'nombre' => $validated['nombre'],
-            'apellido' => $validated['apellido'],
-            'usuario' => $validated['usuario'],
-            'email' => $validated['email'],
-            'password' => password_hash($validated['password'], PASSWORD_DEFAULT),
-            'rol_id' => $validated['rol_id'],
-            'genero' => $validated['genero'],
-        ]);
+    $user = new User();
+    $user->nombre = $validated['nombre'];
+    $user->apellido = $validated['apellido'];
+    $user->usuario = $validated['usuario'];
+    $user->email = $validated['email'];
+    $user->password = Hash::make($validated['password']);
+    $user->rol_id = $validated['rol_id'];
+    $user->genero = $validated['genero'];
+    $user->save();
 
-        return redirect()->route('admin.usuarios.index')->with('success', 'Usuario creado correctamente.');
+    return redirect()->route('admin.usuarios.index')->with('success', 'Usuario creado correctamente.');
+}
+
+public function updateUsuario(Request $request, $id)
+{
+    $validated = $request->validate([
+        'nombre' => 'required|string',
+        'apellido' => 'required|string',
+        'usuario' => 'required|string',
+        'email' => 'required|email',
+        'rol_id' => 'required|integer',
+        'genero' => 'required|string',
+        'password' => 'nullable|string|min:6',
+    ]);
+
+    $usuario = User::findOrFail($id);
+
+    $usuario->nombre = $validated['nombre'];
+    $usuario->apellido = $validated['apellido'];
+    $usuario->usuario = $validated['usuario'];
+    $usuario->email = $validated['email'];
+    $usuario->rol_id = $validated['rol_id'];
+    $usuario->genero = $validated['genero'];
+
+    if (!empty($validated['password'])) {
+        $usuario->password = Hash::make($validated['password']);
+        // Si deseas invalidar los tokens al cambiar password:
+        $usuario->tokens()->delete(); // requiere Sanctum
     }
+
+    $usuario->save();
+
+    return redirect()->route('admin.usuarios.index')->with('success', 'Usuario actualizado correctamente.');
+}
+
 }

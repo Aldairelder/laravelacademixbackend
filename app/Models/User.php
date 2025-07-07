@@ -10,9 +10,9 @@ class User extends Authenticatable
 {
     use HasApiTokens, Notifiable;
 
-    protected $table = 'usuarios'; // ← usa tu tabla real
+    protected $table = 'usuarios';
 
-    public $timestamps = false; // ← si no usas created_at / updated_at
+    public $timestamps = false;
 
     protected $fillable = [
         'nombre',
@@ -27,4 +27,10 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
     ];
+
+    // 🔧 Relación con la tabla roles
+    public function rol()
+    {
+        return $this->belongsTo(Rol::class, 'rol_id');
+    }
 }
